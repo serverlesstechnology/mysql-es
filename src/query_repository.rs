@@ -22,7 +22,7 @@ where
     V: View<A>,
     A: Aggregate,
 {
-    /// Creates a new `PostgresViewRepository` that will store serialized views in a Postgres table named
+    /// Creates a new `MysqlViewRepository` that will store serialized views in a MySql table named
     /// identically to the `query_name` value provided. This table should be created by the user
     /// before using this query repository (see `/db/init.sql` sql initialization file).
     pub fn new(query_name: &str, pool: Pool<MySql>) -> Self {

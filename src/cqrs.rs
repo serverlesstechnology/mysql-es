@@ -6,7 +6,7 @@ use crate::{MysqlCqrs, MysqlEventRepository, MysqlSnapshotCqrs};
 use sqlx::mysql::MySqlPoolOptions;
 use sqlx::{MySql, Pool};
 
-/// A convenience building a simple connection pool for PostgresDb.
+/// A convenience building a simple connection pool for MySql database.
 pub async fn default_mysql_pool(connection_string: &str) -> Pool<MySql> {
     MySqlPoolOptions::new()
         .max_connections(10)

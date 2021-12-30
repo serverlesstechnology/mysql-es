@@ -14,7 +14,7 @@ persist-es = "0.2.4"
 mysql-es = "0.2.4"
 ```
 
-Requires access to a Postgres DB with existing tables. See:
+Requires access to a MySql DB with existing tables. See:
 - [Sample database configuration](db/init.sql)
 - Use `docker-compose` to quickly setup [a local database](docker-compose.yml)
 
