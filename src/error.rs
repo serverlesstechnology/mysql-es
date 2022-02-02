@@ -43,7 +43,7 @@ impl From<sqlx::Error> for MysqlAggregateError {
     }
 }
 
-impl From<MysqlAggregateError> for AggregateError {
+impl<T: std::error::Error> From<MysqlAggregateError> for AggregateError<T> {
     fn from(err: MysqlAggregateError) -> Self {
         match err {
             MysqlAggregateError::OptimisticLock => AggregateError::AggregateConflict,
