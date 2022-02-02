@@ -4,19 +4,21 @@ use cqrs_es::AggregateError;
 use persist_es::PersistenceError;
 use sqlx::Error;
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug)]
 pub enum MysqlAggregateError {
     OptimisticLock,
-    ConnectionError(String),
-    UnknownError(String),
+    ConnectionError(Box<dyn std::error::Error + Send + Sync + 'static>),
+    DeserializationError(Box<dyn std::error::Error + Send + Sync + 'static>),
+    UnknownError(Box<dyn std::error::Error + Send + Sync + 'static>),
 }
 
 impl Display for MysqlAggregateError {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
             MysqlAggregateError::OptimisticLock => write!(f, "optimistic lock error"),
-            MysqlAggregateError::UnknownError(msg) => write!(f, "{}", msg),
-            MysqlAggregateError::ConnectionError(msg) => write!(f, "{}", msg),
+            MysqlAggregateError::ConnectionError(error) => write!(f, "{}", error),
+            MysqlAggregateError::DeserializationError(error) => write!(f, "{}", error),
+            MysqlAggregateError::UnknownError(error) => write!(f, "{}", error),
         }
     }
 }
@@ -33,12 +35,10 @@ impl From<sqlx::Error> for MysqlAggregateError {
                         return MysqlAggregateError::OptimisticLock;
                     }
                 }
-                MysqlAggregateError::UnknownError(format!("{:?}", err))
+                MysqlAggregateError::UnknownError(Box::new(err))
             }
-            Error::Io(e) => MysqlAggregateError::ConnectionError(e.to_string()),
-            Error::Tls(e) => MysqlAggregateError::ConnectionError(e.to_string()),
-            Error::Protocol(e) => panic!("sql protocol error encountered: {}", e),
-            _ => MysqlAggregateError::UnknownError(format!("{:?}", err)),
+            Error::Io(_) | Error::Tls(_) => MysqlAggregateError::ConnectionError(Box::new(err)),
+            _ => MysqlAggregateError::UnknownError(Box::new(err)),
         }
     }
 }
@@ -47,15 +47,25 @@ impl<T: std::error::Error> From<MysqlAggregateError> for AggregateError<T> {
     fn from(err: MysqlAggregateError) -> Self {
         match err {
             MysqlAggregateError::OptimisticLock => AggregateError::AggregateConflict,
-            MysqlAggregateError::UnknownError(msg) => AggregateError::TechnicalError(msg),
-            MysqlAggregateError::ConnectionError(msg) => AggregateError::TechnicalError(msg),
+            MysqlAggregateError::DeserializationError(error) => {
+                AggregateError::DeserializationError(error)
+            }
+            MysqlAggregateError::ConnectionError(error) => AggregateError::TechnicalError(error),
+            MysqlAggregateError::UnknownError(error) => AggregateError::TechnicalError(error),
         }
     }
 }
 
 impl From<serde_json::Error> for MysqlAggregateError {
     fn from(err: serde_json::Error) -> Self {
-        MysqlAggregateError::UnknownError(err.to_string())
+        match err.classify() {
+            serde_json::error::Category::Data | serde_json::error::Category::Syntax => {
+                MysqlAggregateError::DeserializationError(Box::new(err))
+            }
+            serde_json::error::Category::Io | serde_json::error::Category::Eof => {
+                MysqlAggregateError::UnknownError(Box::new(err))
+            }
+        }
     }
 }
 
@@ -63,8 +73,11 @@ impl From<MysqlAggregateError> for PersistenceError {
     fn from(err: MysqlAggregateError) -> Self {
         match err {
             MysqlAggregateError::OptimisticLock => PersistenceError::OptimisticLockError,
-            MysqlAggregateError::UnknownError(msg) => PersistenceError::UnknownError(msg),
-            MysqlAggregateError::ConnectionError(msg) => PersistenceError::ConnectionError(msg),
+            MysqlAggregateError::ConnectionError(error) => PersistenceError::ConnectionError(error),
+            MysqlAggregateError::DeserializationError(error) => {
+                PersistenceError::DeserializationError(error)
+            }
+            MysqlAggregateError::UnknownError(error) => PersistenceError::UnknownError(error),
         }
     }
 }
