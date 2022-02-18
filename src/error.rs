@@ -31,7 +31,7 @@ impl From<sqlx::Error> for MysqlAggregateError {
         match &err {
             Error::Database(database_error) => {
                 if let Some(code) = database_error.code() {
-                    if code.as_ref() == "23505" {
+                    if code.as_ref() == "23000" {
                         return MysqlAggregateError::OptimisticLock;
                     }
                 }

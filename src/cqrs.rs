@@ -38,3 +38,20 @@ where
     let store = PersistedSnapshotStore::new(repo);
     CqrsFramework::new(store, query_processor)
 }
+
+#[cfg(test)]
+mod test {
+    use crate::testing::tests::{
+        TestAggregate, TestQueryRepository, TestView, TEST_CONNECTION_STRING,
+    };
+    use crate::{default_mysql_pool, mysql_cqrs, MysqlViewRepository};
+    use std::sync::Arc;
+
+    #[tokio::test]
+    async fn test_valid_cqrs_framework() {
+        let pool = default_mysql_pool(TEST_CONNECTION_STRING).await;
+        let repo = MysqlViewRepository::<TestView, TestAggregate>::new("test_query", pool.clone());
+        let query = TestQueryRepository::new(repo);
+        let _ps = mysql_cqrs(pool, vec![Arc::new(query)]);
+    }
+}
