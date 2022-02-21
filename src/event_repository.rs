@@ -1,7 +1,6 @@
-use futures::TryStreamExt;
-
 use async_trait::async_trait;
 use cqrs_es::Aggregate;
+use futures::TryStreamExt;
 use persist_es::{PersistedEventRepository, PersistenceError, SerializedEvent, SerializedSnapshot};
 use serde_json::Value;
 use sqlx::mysql::MySqlRow;
@@ -9,30 +8,17 @@ use sqlx::{MySql, Pool, Row, Transaction};
 
 use crate::error::MysqlAggregateError;
 
-static INSERT_EVENT: &str =
-    "INSERT INTO events (aggregate_type, aggregate_id, sequence, event_type, event_version, payload, metadata)
-                               VALUES (?, ?, ?, ?, ?, ?, ?)";
-
-static SELECT_EVENTS: &str =
-    "SELECT aggregate_type, aggregate_id, sequence, event_type, event_version, payload, metadata
-                                FROM events
-                                WHERE aggregate_type = ? 
-                                  AND aggregate_id = ? ORDER BY sequence";
-
-static INSERT_SNAPSHOT: &str =
-    "INSERT INTO snapshots (aggregate_type, aggregate_id, last_sequence, current_snapshot, payload)
-                               VALUES (?, ?, ?, ?, ?)";
-static UPDATE_SNAPSHOT: &str = "UPDATE snapshots
-                               SET last_sequence= ? , payload= ?, current_snapshot= ?
-                               WHERE aggregate_type= ? AND aggregate_id= ? AND current_snapshot= ?";
-static SELECT_SNAPSHOT: &str =
-    "SELECT aggregate_type, aggregate_id, last_sequence, current_snapshot, payload
-                                FROM snapshots
-                                WHERE aggregate_type = ? AND aggregate_id = ?";
+const DEFAULT_EVENT_TABLE: &str = "events";
+const DEFAULT_SNAPSHOT_TABLE: &str = "snapshots";
 
 /// A snapshot backed event repository for use in backing a `PersistedSnapshotStore`.
 pub struct MysqlEventRepository {
     pool: Pool<MySql>,
+    insert_event: String,
+    select_events: String,
+    insert_snapshot: String,
+    update_snapshot: String,
+    select_snapshot: String,
 }
 
 #[async_trait]
@@ -41,8 +27,8 @@ impl PersistedEventRepository for MysqlEventRepository {
         &self,
         aggregate_id: &str,
     ) -> Result<Vec<SerializedEvent>, PersistenceError> {
-        let query = SELECT_EVENTS;
-        self.select_events::<A>(aggregate_id, query).await
+        self.select_events::<A>(aggregate_id, &self.select_events)
+            .await
     }
 
     async fn get_last_events<A: Aggregate>(
@@ -68,7 +54,7 @@ impl PersistedEventRepository for MysqlEventRepository {
         &self,
         aggregate_id: &str,
     ) -> Result<Option<SerializedSnapshot>, PersistenceError> {
-        let row: MySqlRow = match sqlx::query(SELECT_SNAPSHOT)
+        let row: MySqlRow = match sqlx::query(&self.select_snapshot)
             .bind(A::aggregate_type())
             .bind(&aggregate_id)
             .fetch_optional(&self.pool)
@@ -126,13 +112,40 @@ impl MysqlEventRepository {
 
 impl MysqlEventRepository {
     /// Creates a new `MysqlEventRepository` from the provided database connection
-    /// used for backing a `MysqlSnapshotStore`.
+    /// used for backing a `MysqlSnapshotStore`. This uses the default tables 'events'
+    /// and 'snapshots'.
     ///
     /// ```ignore
     /// let store = MysqlEventRepository::<MyAggregate>::new(pool);
     /// ```
     pub fn new(pool: Pool<MySql>) -> Self {
-        Self { pool }
+        Self::new_with_tables(pool, DEFAULT_EVENT_TABLE, DEFAULT_SNAPSHOT_TABLE)
+    }
+
+    /// Creates a new `MysqlEventRepository` from the provided database connection and table names.
+    /// Used for backing a `MysqlSnapshotStore`.
+    ///
+    /// ```ignore
+    /// let store = MysqlEventRepository::<MyAggregate>::new_with_table_names(pool,"my_event_table","my_snapshot_table");
+    /// ```
+    pub fn new_with_tables(pool: Pool<MySql>, events_table: &str, snapshots_table: &str) -> Self {
+        Self {
+            pool,
+            insert_event: format!("INSERT INTO {} (aggregate_type, aggregate_id, sequence, event_type, event_version, payload, metadata)
+                                       VALUES (?, ?, ?, ?, ?, ?, ?)", events_table),
+            select_events: format!("SELECT aggregate_type, aggregate_id, sequence, event_type, event_version, payload, metadata
+                                        FROM {}
+                                        WHERE aggregate_type = ?
+                                          AND aggregate_id = ? ORDER BY sequence", events_table),
+            insert_snapshot: format!("INSERT INTO {} (aggregate_type, aggregate_id, last_sequence, current_snapshot, payload)
+                                       VALUES (?, ?, ?, ?, ?)", snapshots_table),
+            update_snapshot: format!("UPDATE {}
+                                           SET last_sequence= ? , payload= ?, current_snapshot= ?
+                                           WHERE aggregate_type= ? AND aggregate_id= ? AND current_snapshot= ?", snapshots_table),
+            select_snapshot: format!("SELECT aggregate_type, aggregate_id, last_sequence, current_snapshot, payload
+                                        FROM {}
+                                        WHERE aggregate_type = ? AND aggregate_id = ?", snapshots_table),
+        }
     }
 
     pub(crate) async fn insert_events<A: Aggregate>(
@@ -154,7 +167,7 @@ impl MysqlEventRepository {
     ) -> Result<(), MysqlAggregateError> {
         let mut tx: Transaction<MySql> = sqlx::Acquire::begin(&self.pool).await?;
         let current_sequence = self.persist_events::<A>(&mut tx, events).await?;
-        sqlx::query(INSERT_SNAPSHOT)
+        sqlx::query(&self.insert_snapshot)
             .bind(A::aggregate_type())
             .bind(aggregate_id.as_str())
             .bind(current_sequence as u32)
@@ -177,7 +190,7 @@ impl MysqlEventRepository {
         let current_sequence = self.persist_events::<A>(&mut tx, events).await?;
 
         let aggregate_payload = serde_json::to_value(&aggregate)?;
-        let result = sqlx::query(UPDATE_SNAPSHOT)
+        let result = sqlx::query(&self.update_snapshot)
             .bind(current_sequence as u32)
             .bind(&aggregate_payload)
             .bind(current_snapshot as u32)
@@ -242,7 +255,7 @@ impl MysqlEventRepository {
             let event_version = &event.event_version;
             let payload = serde_json::to_value(&event.payload)?;
             let metadata = serde_json::to_value(&event.metadata)?;
-            sqlx::query(INSERT_EVENT)
+            sqlx::query(&self.insert_event)
                 .bind(A::aggregate_type())
                 .bind(event.aggregate_id.as_str())
                 .bind(event.sequence as u32)
@@ -259,6 +272,9 @@ impl MysqlEventRepository {
 
 #[cfg(test)]
 mod test {
+    use cqrs_es::EventStore;
+    use persist_es::PersistedEventRepository;
+
     use crate::error::MysqlAggregateError;
     use crate::testing::tests::{
         new_test_event_store, new_test_metadata, new_test_snapshot_store, snapshot_context,
@@ -266,8 +282,6 @@ mod test {
         TEST_CONNECTION_STRING,
     };
     use crate::{default_mysql_pool, MysqlEventRepository};
-    use cqrs_es::EventStore;
-    use persist_es::PersistedEventRepository;
 
     #[tokio::test]
     async fn commit_and_load_events() {
