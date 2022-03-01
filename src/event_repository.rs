@@ -1,7 +1,9 @@
 use async_trait::async_trait;
+use cqrs_es::persist::{
+    PersistedEventRepository, PersistenceError, SerializedEvent, SerializedSnapshot,
+};
 use cqrs_es::Aggregate;
 use futures::TryStreamExt;
-use persist_es::{PersistedEventRepository, PersistenceError, SerializedEvent, SerializedSnapshot};
 use serde_json::Value;
 use sqlx::mysql::MySqlRow;
 use sqlx::{MySql, Pool, Row, Transaction};
@@ -14,6 +16,7 @@ const DEFAULT_SNAPSHOT_TABLE: &str = "snapshots";
 /// A snapshot backed event repository for use in backing a `PersistedSnapshotStore`.
 pub struct MysqlEventRepository {
     pool: Pool<MySql>,
+    event_table: String,
     insert_event: String,
     select_events: String,
     insert_snapshot: String,
@@ -38,14 +41,14 @@ impl PersistedEventRepository for MysqlEventRepository {
     ) -> Result<Vec<SerializedEvent>, PersistenceError> {
         let query = format!(
             "SELECT aggregate_type, aggregate_id, sequence, payload, metadata
-                                FROM events
+                                FROM {}
                                 WHERE aggregate_type = $1 AND aggregate_id = $2
                                   AND sequence > (SELECT max(sequence)
-                                                  FROM events
+                                                  FROM {}
                                                   WHERE aggregate_type = $1
                                                     AND aggregate_id = $2) - {}
                                 ORDER BY sequence",
-            number_events
+            &self.event_table, &self.event_table, number_events
         );
         self.select_events::<A>(aggregate_id, &query).await
     }
@@ -131,6 +134,7 @@ impl MysqlEventRepository {
     pub fn new_with_tables(pool: Pool<MySql>, events_table: &str, snapshots_table: &str) -> Self {
         Self {
             pool,
+            event_table: events_table.to_string(),
             insert_event: format!("INSERT INTO {} (aggregate_type, aggregate_id, sequence, event_type, event_version, payload, metadata)
                                        VALUES (?, ?, ?, ?, ?, ?, ?)", events_table),
             select_events: format!("SELECT aggregate_type, aggregate_id, sequence, event_type, event_version, payload, metadata
@@ -272,8 +276,8 @@ impl MysqlEventRepository {
 
 #[cfg(test)]
 mod test {
+    use cqrs_es::persist::PersistedEventRepository;
     use cqrs_es::EventStore;
-    use persist_es::PersistedEventRepository;
 
     use crate::error::MysqlAggregateError;
     use crate::testing::tests::{

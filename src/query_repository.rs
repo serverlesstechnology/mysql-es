@@ -1,8 +1,8 @@
 use std::marker::PhantomData;
 
 use async_trait::async_trait;
+use cqrs_es::persist::{PersistenceError, QueryContext, ViewRepository};
 use cqrs_es::{Aggregate, View};
-use persist_es::{PersistenceError, QueryContext, ViewRepository};
 use sqlx::mysql::MySqlRow;
 use sqlx::{MySql, Pool, Row};
 
@@ -99,7 +99,7 @@ mod test {
         Created, TestAggregate, TestEvent, TestView, TEST_CONNECTION_STRING,
     };
     use crate::{default_mysql_pool, MysqlViewRepository};
-    use persist_es::{QueryContext, ViewRepository};
+    use cqrs_es::persist::{QueryContext, ViewRepository};
 
     #[tokio::test]
     async fn test_valid_view_repository() {

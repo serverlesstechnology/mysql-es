@@ -2,11 +2,12 @@
 pub(crate) mod tests {
     use std::collections::HashMap;
 
-    use cqrs_es::{Aggregate, AggregateError, DomainEvent, EventEnvelope, UserErrorPayload, View};
-    use persist_es::{
+    use async_trait::async_trait;
+    use cqrs_es::persist::{
         GenericQuery, PersistedEventStore, PersistedSnapshotStore, SerializedEvent,
         SerializedSnapshot,
     };
+    use cqrs_es::{Aggregate, AggregateError, DomainEvent, EventEnvelope, UserErrorPayload, View};
     use serde::{Deserialize, Serialize};
     use serde_json::Value;
     use sqlx::{MySql, Pool};
@@ -21,16 +22,17 @@ pub(crate) mod tests {
         pub(crate) tests: Vec<String>,
     }
 
+    #[async_trait]
     impl Aggregate for TestAggregate {
         type Command = TestCommand;
         type Event = TestEvent;
         type Error = UserErrorPayload;
 
-        fn aggregate_type() -> &'static str {
-            "TestAggregate"
+        fn aggregate_type() -> String {
+            "TestAggregate".to_string()
         }
 
-        fn handle(
+        async fn handle(
             &self,
             _command: Self::Command,
         ) -> Result<Vec<Self::Event>, AggregateError<Self::Error>> {
@@ -73,16 +75,16 @@ pub(crate) mod tests {
     }
 
     impl DomainEvent for TestEvent {
-        fn event_type(&self) -> &'static str {
+        fn event_type(&self) -> String {
             match self {
-                TestEvent::Created(_) => "Created",
-                TestEvent::Tested(_) => "Tested",
-                TestEvent::SomethingElse(_) => "SomethingElse",
+                TestEvent::Created(_) => "Created".to_string(),
+                TestEvent::Tested(_) => "Tested".to_string(),
+                TestEvent::SomethingElse(_) => "SomethingElse".to_string(),
             }
         }
 
-        fn event_version(&self) -> &'static str {
-            "1.0"
+        fn event_version(&self) -> String {
+            "1.0".to_string()
         }
     }
 
