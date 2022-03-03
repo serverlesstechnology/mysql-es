@@ -4,8 +4,7 @@ pub(crate) mod tests {
 
     use async_trait::async_trait;
     use cqrs_es::persist::{
-        GenericQuery, PersistedEventStore, PersistedSnapshotStore, SerializedEvent,
-        SerializedSnapshot,
+        GenericQuery, PersistedEventStore, SerializedEvent, SerializedSnapshot, SourceOfTruth,
     };
     use cqrs_es::{Aggregate, AggregateError, DomainEvent, EventEnvelope, UserErrorPayload, View};
     use serde::{Deserialize, Serialize};
@@ -116,9 +115,10 @@ pub(crate) mod tests {
 
     pub(crate) async fn new_test_snapshot_store(
         pool: Pool<MySql>,
-    ) -> PersistedSnapshotStore<MysqlEventRepository, TestAggregate> {
+    ) -> PersistedEventStore<MysqlEventRepository, TestAggregate> {
         let repo = MysqlEventRepository::new(pool.clone());
-        PersistedSnapshotStore::<MysqlEventRepository, TestAggregate>::new(repo)
+        PersistedEventStore::<MysqlEventRepository, TestAggregate>::new(repo)
+            .with_storage_method(SourceOfTruth::AggregateStore)
     }
 
     pub(crate) fn new_test_metadata() -> HashMap<String, String> {

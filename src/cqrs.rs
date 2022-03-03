@@ -1,8 +1,8 @@
-use cqrs_es::persist::{PersistedEventStore, PersistedSnapshotStore};
+use cqrs_es::persist::{PersistedEventStore, SourceOfTruth};
 use cqrs_es::{Aggregate, CqrsFramework, Query};
 use std::sync::Arc;
 
-use crate::{MysqlCqrs, MysqlEventRepository, MysqlSnapshotCqrs};
+use crate::{MysqlCqrs, MysqlEventRepository};
 use sqlx::mysql::MySqlPoolOptions;
 use sqlx::{MySql, Pool};
 
@@ -30,12 +30,27 @@ where
 pub fn mysql_snapshot_cqrs<A>(
     pool: Pool<MySql>,
     query_processor: Vec<Arc<dyn Query<A>>>,
-) -> MysqlSnapshotCqrs<A>
+    snapshot_size: usize,
+) -> MysqlCqrs<A>
 where
     A: Aggregate,
 {
     let repo = MysqlEventRepository::new(pool);
-    let store = PersistedSnapshotStore::new(repo);
+    let store =
+        PersistedEventStore::new(repo).with_storage_method(SourceOfTruth::Snapshot(snapshot_size));
+    CqrsFramework::new(store, query_processor)
+}
+
+/// A convenience function for creating a CqrsFramework using an aggregate store.
+pub fn mysql_aggregate_cqrs<A>(
+    pool: Pool<MySql>,
+    query_processor: Vec<Arc<dyn Query<A>>>,
+) -> MysqlCqrs<A>
+where
+    A: Aggregate,
+{
+    let repo = MysqlEventRepository::new(pool);
+    let store = PersistedEventStore::new(repo).with_storage_method(SourceOfTruth::AggregateStore);
     CqrsFramework::new(store, query_processor)
 }
 

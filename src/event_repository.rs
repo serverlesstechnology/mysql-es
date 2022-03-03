@@ -292,8 +292,8 @@ mod test {
         let pool = default_mysql_pool(TEST_CONNECTION_STRING).await;
         let event_store = new_test_event_store(pool).await;
         let id = uuid::Uuid::new_v4().to_string();
-        assert_eq!(0, event_store.load(id.as_str()).await.len());
-        let context = event_store.load_aggregate(id.as_str()).await;
+        assert_eq!(0, event_store.load_events(id.as_str()).await.unwrap().len());
+        let context = event_store.load_aggregate(id.as_str()).await.unwrap();
 
         event_store
             .commit(
@@ -311,8 +311,8 @@ mod test {
             .await
             .unwrap();
 
-        assert_eq!(2, event_store.load(id.as_str()).await.len());
-        let context = event_store.load_aggregate(id.as_str()).await;
+        assert_eq!(2, event_store.load_events(id.as_str()).await.unwrap().len());
+        let context = event_store.load_aggregate(id.as_str()).await.unwrap();
 
         event_store
             .commit(
@@ -324,7 +324,7 @@ mod test {
             )
             .await
             .unwrap();
-        assert_eq!(3, event_store.load(id.as_str()).await.len());
+        assert_eq!(3, event_store.load_events(id.as_str()).await.unwrap().len());
     }
 
     #[tokio::test]
@@ -332,8 +332,8 @@ mod test {
         let pool = default_mysql_pool(TEST_CONNECTION_STRING).await;
         let event_store = new_test_snapshot_store(pool).await;
         let id = uuid::Uuid::new_v4().to_string();
-        assert_eq!(0, event_store.load(id.as_str()).await.len());
-        let context = event_store.load_aggregate(id.as_str()).await;
+        assert_eq!(0, event_store.load_events(id.as_str()).await.unwrap().len());
+        let context = event_store.load_aggregate(id.as_str()).await.unwrap();
 
         event_store
             .commit(
@@ -351,8 +351,8 @@ mod test {
             .await
             .unwrap();
 
-        assert_eq!(2, event_store.load(id.as_str()).await.len());
-        let context = event_store.load_aggregate(id.as_str()).await;
+        assert_eq!(2, event_store.load_events(id.as_str()).await.unwrap().len());
+        let context = event_store.load_aggregate(id.as_str()).await.unwrap();
 
         event_store
             .commit(
@@ -364,7 +364,7 @@ mod test {
             )
             .await
             .unwrap();
-        assert_eq!(3, event_store.load(id.as_str()).await.len());
+        assert_eq!(3, event_store.load_events(id.as_str()).await.unwrap().len());
     }
 
     #[tokio::test]
