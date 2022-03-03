@@ -40,17 +40,27 @@ impl PersistedEventRepository for MysqlEventRepository {
         number_events: usize,
     ) -> Result<Vec<SerializedEvent>, PersistenceError> {
         let query = format!(
-            "SELECT aggregate_type, aggregate_id, sequence, payload, metadata
+            "SELECT aggregate_type, aggregate_id, sequence, event_type, event_version, payload, metadata
                                 FROM {}
-                                WHERE aggregate_type = $1 AND aggregate_id = $2
+                                WHERE aggregate_type = ? AND aggregate_id = ?
                                   AND sequence > (SELECT max(sequence)
                                                   FROM {}
-                                                  WHERE aggregate_type = $1
-                                                    AND aggregate_id = $2) - {}
+                                                  WHERE aggregate_type = ?
+                                                    AND aggregate_id = ?) - {}
                                 ORDER BY sequence",
             &self.event_table, &self.event_table, number_events
         );
-        self.select_events::<A>(aggregate_id, &query).await
+        let mut rows = sqlx::query(&query)
+            .bind(A::aggregate_type())
+            .bind(aggregate_id)
+            .bind(A::aggregate_type())
+            .bind(aggregate_id)
+            .fetch(&self.pool);
+        let mut result: Vec<SerializedEvent> = Default::default();
+        while let Some(row) = rows.try_next().await.map_err(MysqlAggregateError::from)? {
+            result.push(self.deser_event(row)?);
+        }
+        Ok(result)
     }
 
     async fn get_snapshot<A: Aggregate>(
