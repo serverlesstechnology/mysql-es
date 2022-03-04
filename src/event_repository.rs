@@ -37,30 +37,28 @@ impl PersistedEventRepository for MysqlEventRepository {
     async fn get_last_events<A: Aggregate>(
         &self,
         aggregate_id: &str,
-        number_events: usize,
+        last_sequence: usize,
     ) -> Result<Vec<SerializedEvent>, PersistenceError> {
         let query = format!(
             "SELECT aggregate_type, aggregate_id, sequence, event_type, event_version, payload, metadata
                                 FROM {}
                                 WHERE aggregate_type = ? AND aggregate_id = ?
-                                  AND sequence > (SELECT max(sequence)
-                                                  FROM {}
-                                                  WHERE aggregate_type = ?
-                                                    AND aggregate_id = ?) - {}
+                                  AND sequence > {}
                                 ORDER BY sequence",
-            &self.event_table, &self.event_table, number_events
+            &self.event_table, last_sequence
         );
-        let mut rows = sqlx::query(&query)
-            .bind(A::aggregate_type())
-            .bind(aggregate_id)
-            .bind(A::aggregate_type())
-            .bind(aggregate_id)
-            .fetch(&self.pool);
-        let mut result: Vec<SerializedEvent> = Default::default();
-        while let Some(row) = rows.try_next().await.map_err(MysqlAggregateError::from)? {
-            result.push(self.deser_event(row)?);
-        }
-        Ok(result)
+        self.select_events::<A>(aggregate_id, &query).await
+        // let mut rows = sqlx::query(&query)
+        //     .bind(A::aggregate_type())
+        //     .bind(aggregate_id)
+        //     .bind(A::aggregate_type())
+        //     .bind(aggregate_id)
+        //     .fetch(&self.pool);
+        // let mut result: Vec<SerializedEvent> = Default::default();
+        // while let Some(row) = rows.try_next().await.map_err(MysqlAggregateError::from)? {
+        //     result.push(self.deser_event(row)?);
+        // }
+        // Ok(result)
     }
 
     async fn get_snapshot<A: Aggregate>(
