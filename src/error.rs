@@ -50,8 +50,10 @@ impl<T: std::error::Error> From<MysqlAggregateError> for AggregateError<T> {
             MysqlAggregateError::DeserializationError(error) => {
                 AggregateError::DeserializationError(error)
             }
-            MysqlAggregateError::ConnectionError(error) => AggregateError::TechnicalError(error),
-            MysqlAggregateError::UnknownError(error) => AggregateError::TechnicalError(error),
+            MysqlAggregateError::ConnectionError(error) => {
+                AggregateError::DatabaseConnectionError(error)
+            }
+            MysqlAggregateError::UnknownError(error) => AggregateError::UnexpectedError(error),
         }
     }
 }

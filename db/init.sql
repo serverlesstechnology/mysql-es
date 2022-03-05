@@ -28,8 +28,8 @@ CREATE TABLE snapshots
 -- replace name with the value used in `GenericQueryRepository::new(query_name: String)`
 CREATE TABLE test_query
 (
-    query_instance_id varchar(255)                NOT NULL,
+    view_id varchar(255)                NOT NULL,
     version           bigint CHECK (version >= 0) NOT NULL,
     payload           json                        NOT NULL,
-    CONSTRAINT test_query_pk PRIMARY KEY (query_instance_id)
+    CONSTRAINT test_query_pk PRIMARY KEY (view_id)
 );
