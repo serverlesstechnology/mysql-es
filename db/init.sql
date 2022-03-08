@@ -33,3 +33,6 @@ CREATE TABLE test_query
     payload           json                        NOT NULL,
     CONSTRAINT test_query_pk PRIMARY KEY (view_id)
 );
+
+INSERT INTO events (aggregate_type, aggregate_id, sequence, event_type, event_version, payload, metadata, timestamp)
+    VALUES ('Customer', 'previous_event_in_need_of_upcast', 1, 'NameAdded', '1.0', '{"NameAdded": {}}', '{}', DEFAULT);

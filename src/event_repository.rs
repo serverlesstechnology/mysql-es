@@ -285,95 +285,13 @@ impl MysqlEventRepository {
 #[cfg(test)]
 mod test {
     use cqrs_es::persist::PersistedEventRepository;
-    use cqrs_es::EventStore;
 
     use crate::error::MysqlAggregateError;
     use crate::testing::tests::{
-        new_test_event_store, new_test_metadata, new_test_snapshot_store, snapshot_context,
-        test_event_envelope, Created, SomethingElse, TestAggregate, TestEvent, Tested,
-        TEST_CONNECTION_STRING,
+        snapshot_context, test_event_envelope, Created, SomethingElse, TestAggregate, TestEvent,
+        Tested, TEST_CONNECTION_STRING,
     };
     use crate::{default_mysql_pool, MysqlEventRepository};
-
-    #[tokio::test]
-    async fn commit_and_load_events() {
-        let pool = default_mysql_pool(TEST_CONNECTION_STRING).await;
-        let event_store = new_test_event_store(pool).await;
-        let id = uuid::Uuid::new_v4().to_string();
-        assert_eq!(0, event_store.load_events(id.as_str()).await.unwrap().len());
-        let context = event_store.load_aggregate(id.as_str()).await.unwrap();
-
-        event_store
-            .commit(
-                vec![
-                    TestEvent::Created(Created {
-                        id: "test_event_A".to_string(),
-                    }),
-                    TestEvent::Tested(Tested {
-                        test_name: "test A".to_string(),
-                    }),
-                ],
-                context,
-                new_test_metadata(),
-            )
-            .await
-            .unwrap();
-
-        assert_eq!(2, event_store.load_events(id.as_str()).await.unwrap().len());
-        let context = event_store.load_aggregate(id.as_str()).await.unwrap();
-
-        event_store
-            .commit(
-                vec![TestEvent::Tested(Tested {
-                    test_name: "test B".to_string(),
-                })],
-                context,
-                new_test_metadata(),
-            )
-            .await
-            .unwrap();
-        assert_eq!(3, event_store.load_events(id.as_str()).await.unwrap().len());
-    }
-
-    #[tokio::test]
-    async fn commit_and_load_events_snapshot_store() {
-        let pool = default_mysql_pool(TEST_CONNECTION_STRING).await;
-        let event_store = new_test_snapshot_store(pool).await;
-        let id = uuid::Uuid::new_v4().to_string();
-        assert_eq!(0, event_store.load_events(id.as_str()).await.unwrap().len());
-        let context = event_store.load_aggregate(id.as_str()).await.unwrap();
-
-        event_store
-            .commit(
-                vec![
-                    TestEvent::Created(Created {
-                        id: "test_event_A".to_string(),
-                    }),
-                    TestEvent::Tested(Tested {
-                        test_name: "test A".to_string(),
-                    }),
-                ],
-                context,
-                new_test_metadata(),
-            )
-            .await
-            .unwrap();
-
-        assert_eq!(2, event_store.load_events(id.as_str()).await.unwrap().len());
-        let context = event_store.load_aggregate(id.as_str()).await.unwrap();
-
-        event_store
-            .commit(
-                vec![TestEvent::Tested(Tested {
-                    test_name: "test B".to_string(),
-                })],
-                context,
-                new_test_metadata(),
-            )
-            .await
-            .unwrap();
-        assert_eq!(3, event_store.load_events(id.as_str()).await.unwrap().len());
-    }
 
     #[tokio::test]
     async fn event_repositories() {
