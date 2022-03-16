@@ -126,20 +126,34 @@ impl MysqlEventRepository {
     /// used for backing a `MysqlSnapshotStore`. This uses the default tables 'events'
     /// and 'snapshots'.
     ///
-    /// ```ignore
-    /// let store = MysqlEventRepository::<MyAggregate>::new(pool);
+    /// ```
+    /// use sqlx::{MySql, Pool};
+    /// use mysql_es::MysqlEventRepository;
+    ///
+    /// fn configure_repo(pool: Pool<MySql>) -> MysqlEventRepository {
+    ///     MysqlEventRepository::new(pool)
+    /// }
     /// ```
     pub fn new(pool: Pool<MySql>) -> Self {
-        Self::new_with_tables(pool, DEFAULT_EVENT_TABLE, DEFAULT_SNAPSHOT_TABLE)
+        Self::use_tables(pool, DEFAULT_EVENT_TABLE, DEFAULT_SNAPSHOT_TABLE)
     }
 
-    /// Creates a new `MysqlEventRepository` from the provided database connection and table names.
-    /// Used for backing a `MysqlSnapshotStore`.
+    /// Configures a `MysqlEventRepository` to use the provided table names.
     ///
-    /// ```ignore
-    /// let store = MysqlEventRepository::<MyAggregate>::new_with_table_names(pool,"my_event_table","my_snapshot_table");
     /// ```
-    pub fn new_with_tables(pool: Pool<MySql>, events_table: &str, snapshots_table: &str) -> Self {
+    /// use sqlx::{MySql, Pool};
+    /// use mysql_es::MysqlEventRepository;
+    ///
+    /// fn configure_repo(pool: Pool<MySql>) -> MysqlEventRepository {
+    ///     let store = MysqlEventRepository::new(pool);
+    ///     store.with_tables("my_event_table", "my_snapshot_table")
+    /// }
+    /// ```
+    pub fn with_tables(self, events_table: &str, snapshots_table: &str) -> Self {
+        Self::use_tables(self.pool, events_table, snapshots_table)
+    }
+
+    fn use_tables(pool: Pool<MySql>, events_table: &str, snapshots_table: &str) -> Self {
         Self {
             pool,
             event_table: events_table.to_string(),

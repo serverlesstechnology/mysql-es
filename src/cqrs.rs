@@ -15,8 +15,18 @@ pub async fn default_mysql_pool(connection_string: &str) -> Pool<MySql> {
         .expect("unable to connect to database")
 }
 
-/// A convenience function for creating a CqrsFramework from a database connection pool
-/// and queries.
+/// A convenience method for building a simple connection pool for MySql.
+/// A connection pool is needed for both the event and view repositories.
+///
+/// ```
+/// use sqlx::{MySql, Pool};
+/// use mysql_es::default_mysql_pool;
+///
+/// # async fn configure_pool() {
+/// let connection_string = "mysql://test_user:test_pass@localhost:3306/test";
+/// let pool: Pool<MySql> = default_mysql_pool(connection_string).await;
+/// # }
+/// ```
 pub fn mysql_cqrs<A>(pool: Pool<MySql>, query_processor: Vec<Arc<dyn Query<A>>>) -> MysqlCqrs<A>
 where
     A: Aggregate,

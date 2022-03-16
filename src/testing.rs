@@ -7,7 +7,7 @@ pub(crate) mod tests {
     use serde::{Deserialize, Serialize};
     use serde_json::Value;
 
-    use crate::query_repository::MysqlViewRepository;
+    use crate::view_repository::MysqlViewRepository;
 
     #[derive(Debug, Serialize, Deserialize, PartialEq)]
     pub struct TestAggregate {

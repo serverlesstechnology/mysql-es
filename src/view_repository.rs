@@ -23,21 +23,29 @@ where
     A: Aggregate,
 {
     /// Creates a new `MysqlViewRepository` that will store serialized views in a MySql table named
-    /// identically to the `query_name` value provided. This table should be created by the user
+    /// identically to the `view_name` value provided. This table should be created by the user
     /// before using this query repository (see `/db/init.sql` sql initialization file).
-    pub fn new(query_name: &str, pool: Pool<MySql>) -> Self {
+    ///
+    /// ```
+    /// # use cqrs_es::doc::MyAggregate;
+    /// # use cqrs_es::persist::doc::MyView;
+    /// use sqlx::{MySql, Pool};
+    /// use mysql_es::MysqlViewRepository;
+    ///
+    /// fn configure_view_repo(pool: Pool<MySql>) -> MysqlViewRepository<MyView,MyAggregate> {
+    ///     MysqlViewRepository::new("my_view_table", pool)
+    /// }
+    /// ```
+    pub fn new(view_name: &str, pool: Pool<MySql>) -> Self {
         let insert_sql = format!(
             "INSERT INTO {} (payload, version, view_id) VALUES ( ?, ?, ? )",
-            query_name
+            view_name
         );
         let update_sql = format!(
             "UPDATE {} SET payload= ? , version= ? WHERE view_id= ?",
-            query_name
+            view_name
         );
-        let select_sql = format!(
-            "SELECT version,payload FROM {} WHERE view_id= ?",
-            query_name
-        );
+        let select_sql = format!("SELECT version,payload FROM {} WHERE view_id= ?", view_name);
         Self {
             insert_sql,
             update_sql,
