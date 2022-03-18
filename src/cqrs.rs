@@ -1,6 +1,5 @@
 use cqrs_es::persist::PersistedEventStore;
 use cqrs_es::{Aggregate, CqrsFramework, Query};
-use std::sync::Arc;
 
 use crate::{MysqlCqrs, MysqlEventRepository};
 use sqlx::mysql::MySqlPoolOptions;
@@ -27,7 +26,7 @@ pub async fn default_mysql_pool(connection_string: &str) -> Pool<MySql> {
 /// let pool: Pool<MySql> = default_mysql_pool(connection_string).await;
 /// # }
 /// ```
-pub fn mysql_cqrs<A>(pool: Pool<MySql>, query_processor: Vec<Arc<dyn Query<A>>>) -> MysqlCqrs<A>
+pub fn mysql_cqrs<A>(pool: Pool<MySql>, query_processor: Vec<Box<dyn Query<A>>>) -> MysqlCqrs<A>
 where
     A: Aggregate,
 {
@@ -39,7 +38,7 @@ where
 /// A convenience function for creating a CqrsFramework using a snapshot store.
 pub fn mysql_snapshot_cqrs<A>(
     pool: Pool<MySql>,
-    query_processor: Vec<Arc<dyn Query<A>>>,
+    query_processor: Vec<Box<dyn Query<A>>>,
     snapshot_size: usize,
 ) -> MysqlCqrs<A>
 where
@@ -53,7 +52,7 @@ where
 /// A convenience function for creating a CqrsFramework using an aggregate store.
 pub fn mysql_aggregate_cqrs<A>(
     pool: Pool<MySql>,
-    query_processor: Vec<Arc<dyn Query<A>>>,
+    query_processor: Vec<Box<dyn Query<A>>>,
 ) -> MysqlCqrs<A>
 where
     A: Aggregate,
@@ -74,8 +73,8 @@ mod test {
     #[tokio::test]
     async fn test_valid_cqrs_framework() {
         let pool = default_mysql_pool(TEST_CONNECTION_STRING).await;
-        let repo = MysqlViewRepository::<TestView, TestAggregate>::new("test_query", pool.clone());
-        let query = TestQueryRepository::new(repo);
-        let _ps = mysql_cqrs(pool, vec![Arc::new(query)]);
+        let repo = MysqlViewRepository::<TestView, TestAggregate>::new("test_view", pool.clone());
+        let query = TestQueryRepository::new(Arc::new(repo));
+        let _ps = mysql_cqrs(pool, vec![Box::new(query)]);
     }
 }

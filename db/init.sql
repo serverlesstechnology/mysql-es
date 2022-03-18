@@ -24,15 +24,17 @@ CREATE TABLE snapshots
     CONSTRAINT snapshots_pk PRIMARY KEY (aggregate_type, aggregate_id)
 );
 
--- one view table should be created for every `GenericQueryRepository` used
--- replace name with the value used in `GenericQueryRepository::new(query_name: String)`
-CREATE TABLE test_query
+-- one view table should be created for every `MysqlViewRepository` used
+-- replace name with the value used in `MysqlViewRepository::new(view_name: String)`
+CREATE TABLE test_view
 (
     view_id varchar(255)                NOT NULL,
-    version           bigint CHECK (version >= 0) NOT NULL,
-    payload           json                        NOT NULL,
-    CONSTRAINT test_query_pk PRIMARY KEY (view_id)
+    version bigint CHECK (version >= 0) NOT NULL,
+    payload json                        NOT NULL,
+    CONSTRAINT test_view_pk PRIMARY KEY (view_id)
 );
 
 INSERT INTO events (aggregate_type, aggregate_id, sequence, event_type, event_version, payload, metadata, timestamp)
-    VALUES ('Customer', 'previous_event_in_need_of_upcast', 1, 'NameAdded', '1.0', '{"NameAdded": {}}', '{}', DEFAULT);
+VALUES ('Customer', 'previous_event_in_need_of_upcast', 1, 'NameAdded', '1.0', '{
+  "NameAdded": {}
+}', '{}', DEFAULT);
