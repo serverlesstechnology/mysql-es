@@ -1,6 +1,6 @@
 # mysql-es
 
-> A MySql implementation of the `EventStore` trait in cqrs-es.
+> A MySql implementation of the `PersistedEventRepository` trait in cqrs-es.
 
 ---
 
@@ -9,8 +9,8 @@ Add to your Cargo.toml file:
 
 ```toml
 [dependencies]
-cqrs-es = "0.3.0"
-mysql-es = "0.3.0"
+cqrs-es = "0.3.1"
+mysql-es = "0.3.1"
 ```
 
 Requires access to a MySql DB with existing tables. See:
