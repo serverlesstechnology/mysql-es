@@ -30,3 +30,4 @@ Things that could be helpful:
 
 [![Crates.io](https://img.shields.io/crates/v/mysql-es)](https://crates.io/crates/mysql-es)
 [![docs](https://img.shields.io/badge/API-docs-blue.svg)](https://docs.rs/mysql-es)
+![docs](https://codebuild.us-west-2.amazonaws.com/badges?uuid=eyJlbmNyeXB0ZWREYXRhIjoiRTZsVnY1emVCV1JXblVOMHpZTHdoS3JuVVVOUmRRb054Z2dYZmhKMk9PVU1zYklUaUhOTkM1d3l1czRWQUhBa28yWHM0RmRacmE3SWRmT1pJVU83akFVPSIsIml2UGFyYW1ldGVyU3BlYyI6InNuZ3U4MVBGYUFNbmhmLzIiLCJtYXRlcmlhbFNldFNlcmlhbCI6MX0%3D&branch=main)
