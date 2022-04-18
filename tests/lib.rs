@@ -5,7 +5,7 @@ use mysql_es::{default_mysql_pool, MysqlEventRepository};
 use serde_json::Value;
 use sqlx::{MySql, Pool};
 
-const TEST_CONNECTION_STRING: &str = "mysql://test_user:test_pass@localhost:3306/test";
+const TEST_CONNECTION_STRING: &str = "mysql://test_user:test_pass@127.0.0.1:3306/test";
 
 async fn new_test_event_store(
     pool: Pool<MySql>,

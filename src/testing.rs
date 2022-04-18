@@ -1,11 +1,11 @@
 #[cfg(test)]
 pub(crate) mod tests {
-
     use async_trait::async_trait;
     use cqrs_es::persist::{GenericQuery, SerializedEvent, SerializedSnapshot};
-    use cqrs_es::{Aggregate, AggregateError, DomainEvent, EventEnvelope, UserErrorPayload, View};
+    use cqrs_es::{Aggregate, AggregateError, DomainEvent, EventEnvelope, View};
     use serde::{Deserialize, Serialize};
     use serde_json::Value;
+    use std::fmt::{Display, Formatter};
 
     use crate::view_repository::MysqlViewRepository;
 
@@ -20,7 +20,7 @@ pub(crate) mod tests {
     impl Aggregate for TestAggregate {
         type Command = TestCommand;
         type Event = TestEvent;
-        type Error = UserErrorPayload;
+        type Error = TestError;
 
         fn aggregate_type() -> String {
             "TestAggregate".to_string()
@@ -82,6 +82,17 @@ pub(crate) mod tests {
         }
     }
 
+    #[derive(Debug, PartialEq)]
+    pub struct TestError(String);
+
+    impl Display for TestError {
+        fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+            write!(f, "{}", self.0)
+        }
+    }
+
+    impl std::error::Error for TestError {}
+
     pub enum TestCommand {}
 
     pub(crate) type TestQueryRepository =
@@ -99,7 +110,7 @@ pub(crate) mod tests {
     }
 
     pub(crate) const TEST_CONNECTION_STRING: &str =
-        "mysql://test_user:test_pass@localhost:3306/test";
+        "mysql://test_user:test_pass@127.0.0.1:3306/test";
 
     pub(crate) fn test_event_envelope(
         id: &str,
