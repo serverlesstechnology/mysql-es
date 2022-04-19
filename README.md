@@ -9,8 +9,8 @@ Add to your Cargo.toml file:
 
 ```toml
 [dependencies]
-cqrs-es = "0.3.1"
-mysql-es = "0.3.1"
+cqrs-es = "0.3.2"
+mysql-es = "0.3.2"
 ```
 
 Requires access to a MySql DB with existing tables. See:
