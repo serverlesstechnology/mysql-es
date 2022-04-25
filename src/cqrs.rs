@@ -26,13 +26,17 @@ pub async fn default_mysql_pool(connection_string: &str) -> Pool<MySql> {
 /// let pool: Pool<MySql> = default_mysql_pool(connection_string).await;
 /// # }
 /// ```
-pub fn mysql_cqrs<A>(pool: Pool<MySql>, query_processor: Vec<Box<dyn Query<A>>>) -> MysqlCqrs<A>
+pub fn mysql_cqrs<A>(
+    pool: Pool<MySql>,
+    query_processor: Vec<Box<dyn Query<A>>>,
+    services: A::Services,
+) -> MysqlCqrs<A>
 where
     A: Aggregate,
 {
     let repo = MysqlEventRepository::new(pool);
     let store = PersistedEventStore::new_event_store(repo);
-    CqrsFramework::new(store, query_processor)
+    CqrsFramework::new(store, query_processor, services)
 }
 
 /// A convenience function for creating a CqrsFramework using a snapshot store.
@@ -40,32 +44,34 @@ pub fn mysql_snapshot_cqrs<A>(
     pool: Pool<MySql>,
     query_processor: Vec<Box<dyn Query<A>>>,
     snapshot_size: usize,
+    services: A::Services,
 ) -> MysqlCqrs<A>
 where
     A: Aggregate,
 {
     let repo = MysqlEventRepository::new(pool);
     let store = PersistedEventStore::new_snapshot_store(repo, snapshot_size);
-    CqrsFramework::new(store, query_processor)
+    CqrsFramework::new(store, query_processor, services)
 }
 
 /// A convenience function for creating a CqrsFramework using an aggregate store.
 pub fn mysql_aggregate_cqrs<A>(
     pool: Pool<MySql>,
     query_processor: Vec<Box<dyn Query<A>>>,
+    services: A::Services,
 ) -> MysqlCqrs<A>
 where
     A: Aggregate,
 {
     let repo = MysqlEventRepository::new(pool);
     let store = PersistedEventStore::new_aggregate_store(repo);
-    CqrsFramework::new(store, query_processor)
+    CqrsFramework::new(store, query_processor, services)
 }
 
 #[cfg(test)]
 mod test {
     use crate::testing::tests::{
-        TestAggregate, TestQueryRepository, TestView, TEST_CONNECTION_STRING,
+        TestAggregate, TestQueryRepository, TestServices, TestView, TEST_CONNECTION_STRING,
     };
     use crate::{default_mysql_pool, mysql_cqrs, MysqlViewRepository};
     use std::sync::Arc;
@@ -75,6 +81,6 @@ mod test {
         let pool = default_mysql_pool(TEST_CONNECTION_STRING).await;
         let repo = MysqlViewRepository::<TestView, TestAggregate>::new("test_view", pool.clone());
         let query = TestQueryRepository::new(Arc::new(repo));
-        let _ps = mysql_cqrs(pool, vec![Box::new(query)]);
+        let _ps = mysql_cqrs(pool, vec![Box::new(query)], TestServices);
     }
 }
