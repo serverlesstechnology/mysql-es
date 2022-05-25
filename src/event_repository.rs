@@ -1,8 +1,10 @@
 use async_trait::async_trait;
 use cqrs_es::persist::{
-    PersistedEventRepository, PersistenceError, SerializedEvent, SerializedSnapshot,
+    PersistedEventRepository, PersistenceError, ReplayFeed, ReplayStream, SerializedEvent,
+    SerializedSnapshot,
 };
 use cqrs_es::Aggregate;
+use futures::stream::BoxStream;
 use futures::TryStreamExt;
 use serde_json::Value;
 use sqlx::mysql::MySqlRow;
@@ -13,15 +15,19 @@ use crate::error::MysqlAggregateError;
 const DEFAULT_EVENT_TABLE: &str = "events";
 const DEFAULT_SNAPSHOT_TABLE: &str = "snapshots";
 
-/// A snapshot backed event repository for use in backing a `PersistedSnapshotStore`.
+const DEFAULT_STREAMING_CHANNEL_SIZE: usize = 200;
+
+/// An event repository relying on a MySql database for persistence.
 pub struct MysqlEventRepository {
     pool: Pool<MySql>,
     event_table: String,
     insert_event: String,
     select_events: String,
+    all_events: String,
     insert_snapshot: String,
     update_snapshot: String,
     select_snapshot: String,
+    stream_channel_size: usize,
 }
 
 #[async_trait]
@@ -48,17 +54,6 @@ impl PersistedEventRepository for MysqlEventRepository {
             &self.event_table, last_sequence
         );
         self.select_events::<A>(aggregate_id, &query).await
-        // let mut rows = sqlx::query(&query)
-        //     .bind(A::aggregate_type())
-        //     .bind(aggregate_id)
-        //     .bind(A::aggregate_type())
-        //     .bind(aggregate_id)
-        //     .fetch(&self.pool);
-        // let mut result: Vec<SerializedEvent> = Default::default();
-        // while let Some(row) = rows.try_next().await.map_err(MysqlAggregateError::from)? {
-        //     result.push(self.deser_event(row)?);
-        // }
-        // Ok(result)
     }
 
     async fn get_snapshot<A: Aggregate>(
@@ -101,6 +96,74 @@ impl PersistedEventRepository for MysqlEventRepository {
         };
         Ok(())
     }
+
+    async fn stream_events<A: Aggregate>(
+        &self,
+        aggregate_id: &str,
+    ) -> Result<ReplayStream, PersistenceError> {
+        Ok(stream_events(
+            self.select_events.clone(),
+            A::aggregate_type(),
+            aggregate_id.to_string(),
+            self.pool.clone(),
+            self.stream_channel_size,
+        ))
+    }
+
+    async fn stream_all_events<A: Aggregate>(&self) -> Result<ReplayStream, PersistenceError> {
+        Ok(stream_all_events(
+            self.all_events.clone(),
+            A::aggregate_type(),
+            self.pool.clone(),
+            self.stream_channel_size,
+        ))
+    }
+}
+
+fn stream_events(
+    query: String,
+    aggregate_type: String,
+    aggregate_id: String,
+    pool: Pool<MySql>,
+    channel_size: usize,
+) -> ReplayStream {
+    let (feed, stream) = ReplayStream::new(channel_size);
+    tokio::spawn(async move {
+        let query = sqlx::query(&query)
+            .bind(&aggregate_type)
+            .bind(&aggregate_id);
+        let rows = query.fetch(&pool);
+        process_rows(feed, rows).await;
+    });
+    stream
+}
+fn stream_all_events(
+    query: String,
+    aggregate_type: String,
+    pool: Pool<MySql>,
+    channel_size: usize,
+) -> ReplayStream {
+    let (feed, stream) = ReplayStream::new(channel_size);
+    tokio::spawn(async move {
+        let query = sqlx::query(&query).bind(&aggregate_type);
+        let rows = query.fetch(&pool);
+        process_rows(feed, rows).await;
+    });
+    stream
+}
+
+async fn process_rows(
+    mut feed: ReplayFeed,
+    mut rows: BoxStream<'_, Result<MySqlRow, sqlx::Error>>,
+) {
+    while let Some(row) = rows.try_next().await.unwrap() {
+        let event_result: Result<SerializedEvent, PersistenceError> =
+            MysqlEventRepository::deser_event(row).map_err(Into::into);
+        if feed.push(event_result).await.is_err() {
+            // TODO: in the unlikely event of a broken channel this error should be reported.
+            break;
+        };
+    }
 }
 
 impl MysqlEventRepository {
@@ -115,7 +178,7 @@ impl MysqlEventRepository {
             .fetch(&self.pool);
         let mut result: Vec<SerializedEvent> = Default::default();
         while let Some(row) = rows.try_next().await.map_err(MysqlAggregateError::from)? {
-            result.push(self.deser_event(row)?);
+            result.push(MysqlEventRepository::deser_event(row)?);
         }
         Ok(result)
     }
@@ -162,7 +225,12 @@ impl MysqlEventRepository {
             select_events: format!("SELECT aggregate_type, aggregate_id, sequence, event_type, event_version, payload, metadata
                                         FROM {}
                                         WHERE aggregate_type = ?
-                                          AND aggregate_id = ? ORDER BY sequence", events_table),
+                                          AND aggregate_id = ?
+                                        ORDER BY sequence", events_table),
+            all_events: format!("SELECT aggregate_type, aggregate_id, sequence, event_type, event_version, payload, metadata
+                                        FROM {}
+                                        WHERE aggregate_type = ?
+                                        ORDER BY sequence", events_table),
             insert_snapshot: format!("INSERT INTO {} (aggregate_type, aggregate_id, last_sequence, current_snapshot, payload)
                                        VALUES (?, ?, ?, ?, ?)", snapshots_table),
             update_snapshot: format!("UPDATE {}
@@ -171,6 +239,7 @@ impl MysqlEventRepository {
             select_snapshot: format!("SELECT aggregate_type, aggregate_id, last_sequence, current_snapshot, payload
                                         FROM {}
                                         WHERE aggregate_type = ? AND aggregate_id = ?", snapshots_table),
+            stream_channel_size: DEFAULT_STREAMING_CHANNEL_SIZE,
         }
     }
 
@@ -232,7 +301,7 @@ impl MysqlEventRepository {
         }
     }
 
-    fn deser_event(&self, row: MySqlRow) -> Result<SerializedEvent, MysqlAggregateError> {
+    fn deser_event(row: MySqlRow) -> Result<SerializedEvent, MysqlAggregateError> {
         let aggregate_type: String = row.get("aggregate_type");
         let aggregate_id: String = row.get("aggregate_id");
         let sequence = {
@@ -358,6 +427,30 @@ mod test {
 
         let events = event_repo.get_events::<TestAggregate>(&id).await.unwrap();
         assert_eq!(2, events.len());
+
+        verify_replay_stream(&id, event_repo).await;
+    }
+
+    async fn verify_replay_stream(id: &str, event_repo: MysqlEventRepository) {
+        let mut stream = event_repo
+            .stream_events::<TestAggregate>(&id)
+            .await
+            .unwrap();
+        let mut found_in_stream = 0;
+        while let Some(_) = stream.next::<TestAggregate>().await {
+            found_in_stream += 1;
+        }
+        assert_eq!(found_in_stream, 2);
+
+        let mut stream = event_repo
+            .stream_all_events::<TestAggregate>()
+            .await
+            .unwrap();
+        let mut found_in_stream = 0;
+        while let Some(_) = stream.next::<TestAggregate>().await {
+            found_in_stream += 1;
+        }
+        assert!(found_in_stream >= 2);
     }
 
     #[tokio::test]
