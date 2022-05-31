@@ -11,6 +11,7 @@ use sqlx::mysql::MySqlRow;
 use sqlx::{MySql, Pool, Row, Transaction};
 
 use crate::error::MysqlAggregateError;
+use crate::sql_query::SqlQueryFactory;
 
 const DEFAULT_EVENT_TABLE: &str = "events";
 const DEFAULT_SNAPSHOT_TABLE: &str = "snapshots";
@@ -20,13 +21,7 @@ const DEFAULT_STREAMING_CHANNEL_SIZE: usize = 200;
 /// An event repository relying on a MySql database for persistence.
 pub struct MysqlEventRepository {
     pool: Pool<MySql>,
-    event_table: String,
-    insert_event: String,
-    select_events: String,
-    all_events: String,
-    insert_snapshot: String,
-    update_snapshot: String,
-    select_snapshot: String,
+    query_factory: SqlQueryFactory,
     stream_channel_size: usize,
 }
 
@@ -36,7 +31,7 @@ impl PersistedEventRepository for MysqlEventRepository {
         &self,
         aggregate_id: &str,
     ) -> Result<Vec<SerializedEvent>, PersistenceError> {
-        self.select_events::<A>(aggregate_id, &self.select_events)
+        self.select_events::<A>(aggregate_id, self.query_factory.select_events())
             .await
     }
 
@@ -45,14 +40,7 @@ impl PersistedEventRepository for MysqlEventRepository {
         aggregate_id: &str,
         last_sequence: usize,
     ) -> Result<Vec<SerializedEvent>, PersistenceError> {
-        let query = format!(
-            "SELECT aggregate_type, aggregate_id, sequence, event_type, event_version, payload, metadata
-                                FROM {}
-                                WHERE aggregate_type = ? AND aggregate_id = ?
-                                  AND sequence > {}
-                                ORDER BY sequence",
-            &self.event_table, last_sequence
-        );
+        let query = self.query_factory.get_last_events(last_sequence);
         self.select_events::<A>(aggregate_id, &query).await
     }
 
@@ -60,7 +48,7 @@ impl PersistedEventRepository for MysqlEventRepository {
         &self,
         aggregate_id: &str,
     ) -> Result<Option<SerializedSnapshot>, PersistenceError> {
-        let row: MySqlRow = match sqlx::query(&self.select_snapshot)
+        let row: MySqlRow = match sqlx::query(self.query_factory.select_snapshot())
             .bind(A::aggregate_type())
             .bind(&aggregate_id)
             .fetch_optional(&self.pool)
@@ -102,7 +90,7 @@ impl PersistedEventRepository for MysqlEventRepository {
         aggregate_id: &str,
     ) -> Result<ReplayStream, PersistenceError> {
         Ok(stream_events(
-            self.select_events.clone(),
+            self.query_factory.select_events().to_string(),
             A::aggregate_type(),
             aggregate_id.to_string(),
             self.pool.clone(),
@@ -112,7 +100,7 @@ impl PersistedEventRepository for MysqlEventRepository {
 
     async fn stream_all_events<A: Aggregate>(&self) -> Result<ReplayStream, PersistenceError> {
         Ok(stream_all_events(
-            self.all_events.clone(),
+            self.query_factory.all_events().to_string(),
             A::aggregate_type(),
             self.pool.clone(),
             self.stream_channel_size,
@@ -201,8 +189,30 @@ impl MysqlEventRepository {
         Self::use_tables(pool, DEFAULT_EVENT_TABLE, DEFAULT_SNAPSHOT_TABLE)
     }
 
+    /// Configures a `MysqlEventRepository` to use a streaming queue of the provided size.
+    ///
+    /// _Example: configure the repository to stream with a 1000 event buffer._
+    /// ```
+    /// use sqlx::{MySql, Pool};
+    /// use mysql_es::MysqlEventRepository;
+    ///
+    /// fn configure_repo(pool: Pool<MySql>) -> MysqlEventRepository {
+    ///     let store = MysqlEventRepository::new(pool);
+    ///     store.with_streaming_channel_size(1000)
+    /// }
+    /// ```
+
+    pub fn with_streaming_channel_size(self, stream_channel_size: usize) -> Self {
+        Self {
+            pool: self.pool,
+            query_factory: self.query_factory,
+            stream_channel_size,
+        }
+    }
     /// Configures a `MysqlEventRepository` to use the provided table names.
     ///
+    /// _Example: configure the repository to use "my_event_table" and "my_snapshot_table"
+    /// for the event and snapshot table names._
     /// ```
     /// use sqlx::{MySql, Pool};
     /// use mysql_es::MysqlEventRepository;
@@ -219,26 +229,7 @@ impl MysqlEventRepository {
     fn use_tables(pool: Pool<MySql>, events_table: &str, snapshots_table: &str) -> Self {
         Self {
             pool,
-            event_table: events_table.to_string(),
-            insert_event: format!("INSERT INTO {} (aggregate_type, aggregate_id, sequence, event_type, event_version, payload, metadata)
-                                       VALUES (?, ?, ?, ?, ?, ?, ?)", events_table),
-            select_events: format!("SELECT aggregate_type, aggregate_id, sequence, event_type, event_version, payload, metadata
-                                        FROM {}
-                                        WHERE aggregate_type = ?
-                                          AND aggregate_id = ?
-                                        ORDER BY sequence", events_table),
-            all_events: format!("SELECT aggregate_type, aggregate_id, sequence, event_type, event_version, payload, metadata
-                                        FROM {}
-                                        WHERE aggregate_type = ?
-                                        ORDER BY sequence", events_table),
-            insert_snapshot: format!("INSERT INTO {} (aggregate_type, aggregate_id, last_sequence, current_snapshot, payload)
-                                       VALUES (?, ?, ?, ?, ?)", snapshots_table),
-            update_snapshot: format!("UPDATE {}
-                                           SET last_sequence= ? , payload= ?, current_snapshot= ?
-                                           WHERE aggregate_type= ? AND aggregate_id= ? AND current_snapshot= ?", snapshots_table),
-            select_snapshot: format!("SELECT aggregate_type, aggregate_id, last_sequence, current_snapshot, payload
-                                        FROM {}
-                                        WHERE aggregate_type = ? AND aggregate_id = ?", snapshots_table),
+            query_factory: SqlQueryFactory::new(events_table, snapshots_table),
             stream_channel_size: DEFAULT_STREAMING_CHANNEL_SIZE,
         }
     }
@@ -262,7 +253,7 @@ impl MysqlEventRepository {
     ) -> Result<(), MysqlAggregateError> {
         let mut tx: Transaction<MySql> = sqlx::Acquire::begin(&self.pool).await?;
         let current_sequence = self.persist_events::<A>(&mut tx, events).await?;
-        sqlx::query(&self.insert_snapshot)
+        sqlx::query(self.query_factory.insert_snapshot())
             .bind(A::aggregate_type())
             .bind(aggregate_id.as_str())
             .bind(current_sequence as u32)
@@ -285,7 +276,7 @@ impl MysqlEventRepository {
         let current_sequence = self.persist_events::<A>(&mut tx, events).await?;
 
         let aggregate_payload = serde_json::to_value(&aggregate)?;
-        let result = sqlx::query(&self.update_snapshot)
+        let result = sqlx::query(self.query_factory.update_snapshot())
             .bind(current_sequence as u32)
             .bind(&aggregate_payload)
             .bind(current_snapshot as u32)
@@ -350,7 +341,7 @@ impl MysqlEventRepository {
             let event_version = &event.event_version;
             let payload = serde_json::to_value(&event.payload)?;
             let metadata = serde_json::to_value(&event.metadata)?;
-            sqlx::query(&self.insert_event)
+            sqlx::query(self.query_factory.insert_event())
                 .bind(A::aggregate_type())
                 .bind(event.aggregate_id.as_str())
                 .bind(event.sequence as u32)
@@ -380,7 +371,7 @@ mod test {
     async fn event_repositories() {
         let pool = default_mysql_pool(TEST_CONNECTION_STRING).await;
         let id = uuid::Uuid::new_v4().to_string();
-        let event_repo = MysqlEventRepository::new(pool.clone());
+        let event_repo = MysqlEventRepository::new(pool.clone()).with_streaming_channel_size(1);
         let events = event_repo.get_events::<TestAggregate>(&id).await.unwrap();
         assert!(events.is_empty());
 
