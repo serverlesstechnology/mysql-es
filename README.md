@@ -26,7 +26,19 @@ let cqrs = mysql_es::mysql_cqrs(pool, vec![])
 Things that could be helpful:
 - [User guide](https://doc.rust-cqrs.org) along with an introduction to CQRS and event sourcing.
 - [Demo application](https://github.com/serverlesstechnology/cqrs-demo) using the warp http server.
-- [Change log](https://github.com/serverlesstechnology/cqrs/blob/master/docs/versions/change_log.md)
+- [Change log](https://github.com/serverlesstechnology/cqrs/blob/main/docs/versions/change_log.md)
+
+
+## Runtime and TLS configuration
+This package defaults to expect the [Tokio runtime](https://crates.io/crates/tokio) and the
+[Rustls library](https://crates.io/crates/rustls) for TLS.
+If a different combination is desired the appropriate feature flag should be used:
+- `runtime-tokio-native-tls`
+- `runtime-tokio-rustls` (default)
+- `runtime-async-std-native-tls`
+- `runtime-async-std-rustls`
+- `runtime-actix-native-tls`
+- `runtime-actix-rustls`
 
 [![Crates.io](https://img.shields.io/crates/v/mysql-es)](https://crates.io/crates/mysql-es)
 [![docs](https://img.shields.io/badge/API-docs-blue.svg)](https://docs.rs/mysql-es)
