@@ -50,7 +50,7 @@ impl PersistedEventRepository for MysqlEventRepository {
     ) -> Result<Option<SerializedSnapshot>, PersistenceError> {
         let row: MySqlRow = match sqlx::query(self.query_factory.select_snapshot())
             .bind(A::aggregate_type())
-            .bind(&aggregate_id)
+            .bind(aggregate_id)
             .fetch_optional(&self.pool)
             .await
             .map_err(MysqlAggregateError::from)?
@@ -238,7 +238,7 @@ impl MysqlEventRepository {
         &self,
         events: &[SerializedEvent],
     ) -> Result<(), MysqlAggregateError> {
-        let mut tx: Transaction<MySql> = sqlx::Acquire::begin(&self.pool).await?;
+        let mut tx: Transaction<'_, MySql> = sqlx::Acquire::begin(&self.pool).await?;
         self.persist_events::<A>(&mut tx, events).await?;
         tx.commit().await?;
         Ok(())
@@ -251,7 +251,7 @@ impl MysqlEventRepository {
         current_snapshot: usize,
         events: &[SerializedEvent],
     ) -> Result<(), MysqlAggregateError> {
-        let mut tx: Transaction<MySql> = sqlx::Acquire::begin(&self.pool).await?;
+        let mut tx: Transaction<'_, MySql> = sqlx::Acquire::begin(&self.pool).await?;
         let current_sequence = self.persist_events::<A>(&mut tx, events).await?;
         sqlx::query(self.query_factory.insert_snapshot())
             .bind(A::aggregate_type())
@@ -272,7 +272,7 @@ impl MysqlEventRepository {
         current_snapshot: usize,
         events: &[SerializedEvent],
     ) -> Result<(), MysqlAggregateError> {
-        let mut tx: Transaction<MySql> = sqlx::Acquire::begin(&self.pool).await?;
+        let mut tx: Transaction<'_, MySql> = sqlx::Acquire::begin(&self.pool).await?;
         let current_sequence = self.persist_events::<A>(&mut tx, events).await?;
 
         let aggregate_payload = serde_json::to_value(&aggregate)?;
