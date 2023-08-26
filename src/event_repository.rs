@@ -259,7 +259,7 @@ impl MysqlEventRepository {
             .bind(current_sequence as u32)
             .bind(current_snapshot as u32)
             .bind(&aggregate_payload)
-            .execute(&mut tx)
+            .execute(&mut *tx)
             .await?;
         tx.commit().await?;
         Ok(())
@@ -283,7 +283,7 @@ impl MysqlEventRepository {
             .bind(A::aggregate_type())
             .bind(aggregate_id.as_str())
             .bind((current_snapshot - 1) as u32)
-            .execute(&mut tx)
+            .execute(&mut *tx)
             .await?;
         tx.commit().await?;
         match result.rows_affected() {
@@ -349,7 +349,7 @@ impl MysqlEventRepository {
                 .bind(event_version)
                 .bind(&payload)
                 .bind(&metadata)
-                .execute(&mut *tx)
+                .execute(&mut **tx)
                 .await?;
         }
         Ok(current_sequence)
