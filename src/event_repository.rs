@@ -1,7 +1,6 @@
 use async_trait::async_trait;
 use cqrs_es::persist::{
-    PersistedEventRepository, PersistenceError, ReplayFeed, ReplayStream, SerializedEvent,
-    SerializedSnapshot,
+    PersistedEventRepository, PersistenceError, ReplayFeed, SerializedEvent, SerializedSnapshot,
 };
 use cqrs_es::Aggregate;
 use futures::stream::BoxStream;
@@ -12,6 +11,7 @@ use sqlx::{MySql, Pool, Row, Transaction};
 
 use crate::error::MysqlAggregateError;
 use crate::sql_query::SqlQueryFactory;
+use cqrs_es::persist::MpscReplayStream;
 
 const DEFAULT_EVENT_TABLE: &str = "events";
 const DEFAULT_SNAPSHOT_TABLE: &str = "snapshots";
@@ -26,7 +26,7 @@ pub struct MysqlEventRepository {
 }
 
 #[async_trait]
-impl PersistedEventRepository for MysqlEventRepository {
+impl PersistedEventRepository<MpscReplayStream> for MysqlEventRepository {
     async fn get_events<A: Aggregate>(
         &self,
         aggregate_id: &str,
@@ -88,7 +88,7 @@ impl PersistedEventRepository for MysqlEventRepository {
     async fn stream_events<A: Aggregate>(
         &self,
         aggregate_id: &str,
-    ) -> Result<ReplayStream, PersistenceError> {
+    ) -> Result<MpscReplayStream, PersistenceError> {
         Ok(stream_events(
             self.query_factory.select_events().to_string(),
             A::aggregate_type(),
@@ -98,7 +98,7 @@ impl PersistedEventRepository for MysqlEventRepository {
         ))
     }
 
-    async fn stream_all_events<A: Aggregate>(&self) -> Result<ReplayStream, PersistenceError> {
+    async fn stream_all_events<A: Aggregate>(&self) -> Result<MpscReplayStream, PersistenceError> {
         Ok(stream_all_events(
             self.query_factory.all_events().to_string(),
             A::aggregate_type(),
@@ -114,8 +114,8 @@ fn stream_events(
     aggregate_id: String,
     pool: Pool<MySql>,
     channel_size: usize,
-) -> ReplayStream {
-    let (feed, stream) = ReplayStream::new(channel_size);
+) -> MpscReplayStream {
+    let (feed, stream) = MpscReplayStream::new(channel_size);
     tokio::spawn(async move {
         let query = sqlx::query(&query)
             .bind(&aggregate_type)
@@ -130,8 +130,8 @@ fn stream_all_events(
     aggregate_type: String,
     pool: Pool<MySql>,
     channel_size: usize,
-) -> ReplayStream {
-    let (feed, stream) = ReplayStream::new(channel_size);
+) -> MpscReplayStream {
+    let (feed, stream) = MpscReplayStream::new(channel_size);
     tokio::spawn(async move {
         let query = sqlx::query(&query).bind(&aggregate_type);
         let rows = query.fetch(&pool);
@@ -358,7 +358,7 @@ impl MysqlEventRepository {
 
 #[cfg(test)]
 mod test {
-    use cqrs_es::persist::PersistedEventRepository;
+    use cqrs_es::persist::{PersistedEventRepository, ReplayStream};
 
     use crate::error::MysqlAggregateError;
     use crate::testing::tests::{
