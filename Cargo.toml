@@ -1,6 +1,6 @@
 [package]
 name = "mysql-es"
-version = "0.4.10"
+version = "0.4.11"
 authors = ["Dave Garred <dave.garred@serverlesstechnology.com>"]
 edition = "2021"
 license = "Apache-2.0"
@@ -21,7 +21,7 @@ sqlx = { version = "0.7", features = [ "mysql", "json"] }
 tokio = { version = "1", features = ["rt"] }
 
 [dev-dependencies]
-uuid = { version = "1.4", features = ["v4"]}
+uuid = { version = "1.7", features = ["v4"]}
 
 [features]
 default = ["runtime-tokio-rustls"]
